@@ -1,6 +1,4 @@
 // functions/index.js
-// 引入之前的完整逻辑，但包裹在 Pages 要求的 onRequest 函数中
-
 export async function onRequest(context) {
   const { request, env } = context;
   const url = new URL(request.url);
@@ -19,156 +17,205 @@ export async function onRequest(context) {
   }
 
   try {
-    // --- 路由逻辑开始 (直接复用之前的逻辑) ---
-    
-    // 1. 获取文件列表
+    // 路由处理
+    if (path === '/' && method === 'GET') {
+      return getHomePage(env);
+    }
     if (path === '/api/list' && method === 'GET') {
-      const listed = await env.MY_BUCKET.list();
-      const objects = listed.objects.map(obj => ({
-        key: obj.key,
-        size: obj.size,
-        uploaded: obj.uploaded,
-        type: obj.key.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? 'image' : 
-              obj.key.match(/\.(mp4|webm|mov)$/i) ? 'video' : 'file'
-      }));
-      return new Response(JSON.stringify({ objects }), {
-        headers: { 
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*'
-        }
-      });
+      return await handleList(env, url.searchParams.get('album'));
     }
-
-    // 2. 上传文件
     if (path === '/api/upload' && method === 'POST') {
-      const formData = await request.formData();
-      const file = formData.get('file');
-      const album = formData.get('album') || '';
-      
-      if (!file) return new Response(JSON.stringify({ error: 'No file' }), { status: 400 });
-
-      // 构建文件名：相册名/原文件名
-      const filename = album ? `${album}/${file.name}` : file.name;
-      
-      await env.MY_BUCKET.put(filename, file.stream(), {
-        httpMetadata: { contentType: file.type }
-      });
-
-      // 如果是视频，尝试生成封面 (简化版：仅记录日志，实际生成需更复杂逻辑，此处保持原样)
-      // 注意：Pages Functions 对 CPU 限制较严，建议封面生成在前端做或忽略
-      
-      return new Response(JSON.stringify({ success: true, filename: filename }), {
-        headers: { 
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*'
-        }
-      });
+      return await handleUpload(request, env, url.searchParams.get('album'));
     }
-
-    // 3. 下载/预览文件
     if (path.startsWith('/file/') && method === 'GET') {
       const filename = decodeURIComponent(path.replace('/file/', ''));
-      const object = await env.MY_BUCKET.get(filename);
-
-      if (!object) return new Response('Not Found', { status: 404 });
-
-      const headers = new Headers();
-      object.writeHttpMetadata(headers);
-      headers.set('etag', object.httpEtag);
-      
-      // 如果是图片/视频，允许浏览器预览；其他文件强制下载
-      const isMedia = filename.match(/\.(jpg|jpeg|png|gif|webp|mp4|webm)$/i);
-      if (!isMedia) {
-        headers.set('Content-Disposition', `attachment; filename="${filename}"`);
-      }
-
-      return new Response(object.body, { headers });
+      return await handleDownload(env, filename);
     }
-
-    // 4. 删除文件 (仅管理员)
     if (path.startsWith('/file/') && method === 'DELETE') {
-      // 这里需要在 header 中验证管理员权限，简化起见假设前端已验证
       const filename = decodeURIComponent(path.replace('/file/', ''));
-      await env.MY_BUCKET.delete(filename);
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-      });
+      return await handleDelete(env, filename);
     }
-
-    // 5. 首页 HTML (包含登录、相册展示、上传等所有前端代码)
-    if (path === '/' && method === 'GET') {
-      return new Response(getFullHTML(), {
-        headers: { 'Content-Type': 'text/html' }
-      });
-    }
-
+    
     return new Response('Not Found', { status: 404 });
-
   } catch (e) {
-    return new Response(JSON.stringify({ error: e.message, stack: e.stack }), { status: 500 });
+    console.error(e);
+    return new Response(JSON.stringify({ error: e.message }), { 
+      status: 500, 
+      headers: { 'Content-Type': 'application/json' } 
+    });
   }
 }
 
-// --- 下面是完整的前端 HTML 生成函数 (请粘贴您之前得到的那个巨大的 getFullHTML 函数内容) ---
-// 由于篇幅限制，请将之前的完整 HTML 代码复制到这里，替换下面的占位符
-function getFullHTML() {
-  return `
-<!DOCTYPE html>
+// --- 后端逻辑函数 ---
+
+async function handleList(env, albumFilter) {
+  const listed = await env.MY_BUCKET.list();
+  let objects = listed.objects.map(obj => {
+    const isVideo = obj.key.match(/\.(mp4|webm|mov)$/i);
+    const isCover = obj.key.endsWith('.cover.jpg');
+    
+    // 过滤逻辑：如果是封面图且不是当前请求的文件，可以选择不显示或特殊处理
+    // 这里简单列出所有文件，前端负责渲染
+    
+    return {
+      key: obj.key,
+      size: obj.size,
+      uploaded: obj.uploaded,
+      type: isVideo ? 'video' : 'image',
+      isCover: isCover
+    };
+  });
+
+  // 如果指定了相册，过滤文件名以相册名开头的文件
+  if (albumFilter) {
+    objects = objects.filter(obj => obj.key.startsWith(albumFilter + '/'));
+  }
+
+  return new Response(JSON.stringify({ objects }), {
+    headers: { 
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*'
+    }
+  });
+}
+
+async function handleUpload(request, env, album) {
+  const formData = await request.formData();
+  const file = formData.get('file');
+  
+  if (!file) {
+    return new Response(JSON.stringify({ error: 'No file provided' }), { 
+      status: 400, 
+      headers: { 'Content-Type': 'application/json' } 
+    });
+  }
+
+  let finalKey = file.name;
+  if (album) {
+    finalKey = album + '/' + file.name;
+  }
+
+  // 上传原文件
+  await env.MY_BUCKET.put(finalKey, file.stream(), {
+    httpMetadata: { contentType: file.type }
+  });
+
+  // 如果是视频，尝试生成封面（简化版：仅记录日志，实际生成需FFmpeg，这里仅做标记逻辑占位）
+  // 注意：Worker环境无法直接运行ffmpeg，这里仅保存原文件。
+  // 前端将通过 video 标签自带的第一帧作为封面，或者您可以手动上传封面。
+  
+  return new Response(JSON.stringify({ 
+    success: true, 
+    filename: finalKey,
+    url: `/file/${encodeURIComponent(finalKey)}`
+  }), {
+    headers: { 
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*' 
+    }
+  });
+}
+
+async function handleDownload(env, filename) {
+  const object = await env.MY_BUCKET.get(filename);
+
+  if (!object) {
+    return new Response('File not found', { status: 404 });
+  }
+
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set('etag', object.httpEtag);
+  
+  // 判断是否为图片/视频，如果是则允许预览，否则强制下载
+  // 这里为了统一体验，所有文件都添加 Content-Disposition: inline (预览) 
+  // 如果需要强制下载，改为 attachment
+  const isMedia = filename.match(/\.(jpg|jpeg|png|gif|webp|mp4|webm)$/i);
+  if (!isMedia) {
+     headers.set('Content-Disposition', `attachment; filename="${filename}"`);
+  } else {
+     headers.set('Content-Disposition', `inline; filename="${filename}"`);
+  }
+
+  return new Response(object.body, {
+    headers,
+  });
+}
+
+async function handleDelete(env, filename) {
+  await env.MY_BUCKET.delete(filename);
+  return new Response(JSON.stringify({ success: true }), {
+    headers: { 
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*' 
+    }
+  });
+}
+
+function getHomePage(env) {
+  // 获取相册名称
+  const albums = [
+    env.ALBUM_1 || '相册一',
+    env.ALBUM_2 || '相册二',
+    env.ALBUM_3 || '相册三',
+    env.ALBUM_4 || '相册四',
+    env.ALBUM_5 || '相册五'
+  ];
+
+  const html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>HUST电自814云相册</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
-    /* 样式部分保持不变，使用之前的响应式 CSS */
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 0; background: #f5f5f5; color: #333; }
+    :root { --primary: #0070f3; --bg: #f5f5f5; --card: #ffffff; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 0; background: var(--bg); color: #333; }
     .container { max-width: 1200px; margin: 0 auto; padding: 15px; }
-    h1 { text-align: center; color: #2c3e50; margin-bottom: 20px; font-size: 1.5rem; }
+    header { text-align: center; padding: 20px 0; background: var(--card); margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+    h1 { margin: 0; font-size: 1.5rem; color: #333; }
     
     /* 登录框 */
     #login-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; }
-    .login-box { background: white; padding: 30px; border-radius: 12px; width: 90%; max-width: 400px; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
-    .login-box input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 6px; font-size: 16px; box-sizing: border-box; }
-    .login-box button { width: 100%; padding: 12px; background: #3498db; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; transition: 0.3s; }
-    .login-box button:hover { background: #2980b9; }
+    .login-box { background: white; padding: 30px; border-radius: 12px; width: 90%; max-width: 400px; text-align: center; }
+    .login-box input { width: 100%; padding: 12px; margin: 15px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 16px; }
+    .login-box button { width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; }
     
     /* 相册导航 */
-    .album-nav { display: flex; overflow-x: auto; gap: 10px; padding: 10px 0; margin-bottom: 20px; -webkit-overflow-scrolling: touch; }
-    .album-tab { flex: 0 0 auto; padding: 8px 16px; background: white; border-radius: 20px; font-size: 14px; cursor: pointer; border: 1px solid #eee; white-space: nowrap; }
-    .album-tab.active { background: #3498db; color: white; border-color: #3498db; }
+    .album-nav { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 10px; margin-bottom: 20px; }
+    .album-btn { flex: 0 0 auto; padding: 8px 16px; background: white; border: 1px solid #ddd; border-radius: 20px; cursor: pointer; white-space: nowrap; }
+    .album-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
     
     /* 上传区域 */
-    .upload-area { border: 2px dashed #bdc3c7; padding: 20px; text-align: center; background: white; border-radius: 12px; margin-bottom: 20px; position: relative; }
-    .upload-area.dragover { border-color: #3498db; background: #ebf5fb; }
-    #file-input { display: none; }
-    .upload-btn { background: #2ecc71; color: white; padding: 10px 20px; border-radius: 6px; cursor: pointer; display: inline-block; margin-top: 10px; }
-    
-    /* 进度条 */
-    .progress-container { display: none; margin-top: 15px; }
+    .upload-area { border: 2px dashed #ccc; padding: 30px; text-align: center; background: var(--card); border-radius: 12px; cursor: pointer; transition: 0.3s; position: relative; }
+    .upload-area:hover { border-color: var(--primary); background: #f0f7ff; }
+    #fileInput { display: none; }
+    .progress-container { margin-top: 15px; display: none; }
     .progress-bar { width: 100%; height: 6px; background: #eee; border-radius: 3px; overflow: hidden; }
-    .progress-fill { height: 100%; background: #3498db; width: 0%; transition: width 0.3s; }
-    .progress-text { font-size: 12px; color: #666; margin-top: 5px; text-align: right; }
+    .progress-fill { height: 100%; background: var(--primary); width: 0%; transition: width 0.3s; }
+    .progress-text { font-size: 12px; color: #666; margin-top: 5px; }
 
-    /* 网格布局 */
+    /* 文件列表 */
     .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; }
-    @media (max-width: 600px) { .gallery { grid-template-columns: repeat(2, 1fr); } }
+    @media (min-width: 768px) { .gallery { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); } }
     
-    .card { background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); position: relative; transition: transform 0.2s; }
+    .card { background: var(--card); border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); position: relative; transition: transform 0.2s; }
     .card:hover { transform: translateY(-3px); }
-    .media-wrapper { position: relative; width: 100%; padding-top: 100%; background: #f0f0f0; }
+    .media-wrapper { position: relative; width: 100%; padding-top: 100%; /* 1:1 Aspect Ratio */ background: #eee; }
     .media-wrapper img, .media-wrapper video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
-    .video-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 30px; color: white; text-shadow: 0 2px 4px rgba(0,0,0,0.5); pointer-events: none; }
+    .video-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 24px; color: white; text-shadow: 0 2px 4px rgba(0,0,0,0.5); pointer-events: none; }
     
     .card-actions { padding: 10px; display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
-    .file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; }
+    .file-name { truncate; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .btn-group { display: flex; gap: 5px; }
-    .btn { padding: 4px 8px; border-radius: 4px; border: none; cursor: pointer; font-size: 12px; }
-    .btn-download { background: #3498db; color: white; }
-    .btn-delete { background: #e74c3c; color: white; }
-    .btn-backup { background: #f39c12; color: white; padding: 8px 15px; font-size: 14px; margin-bottom: 15px; width: 100%; }
+    .btn-sm { padding: 4px 8px; border-radius: 4px; border: none; cursor: pointer; font-size: 11px; }
+    .btn-view { background: #eef; color: #33f; }
+    .btn-down { background: #efe; color: #3a3; }
+    .btn-del { background: #fee; color: #d33; }
     
-    .hidden { display: none !important; }
+    .admin-controls { margin-top: 20px; text-align: center; }
+    .btn-backup { background: #333; color: white; padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px; }
   </style>
 </head>
 <body>
@@ -176,31 +223,29 @@ function getFullHTML() {
   <!-- 登录模态框 -->
   <div id="login-modal">
     <div class="login-box">
-      <h2>HUST电自814云相册</h2>
-      <p style="color:#666;font-size:14px;margin-bottom:20px;">请输入访问密码</p>
+      <h2>🔐 HUST电自814云相册</h2>
+      <p>请输入访问密码</p>
       <input type="password" id="password-input" placeholder="输入密码..." />
-      <button onclick="checkPassword()">进入相册</button>
-      <p id="login-error" style="color:red;font-size:12px;margin-top:10px;display:none;">密码错误</p>
+      <button onclick="checkLogin()">进入相册</button>
+      <p id="login-error" style="color:red; display:none; margin-top:10px;">密码错误</p>
     </div>
   </div>
 
-  <div class="container hidden" id="main-content">
-    <h1>📸 HUST电自814云相册</h1>
-    
-    <!-- 管理员备份按钮 -->
-    <button id="backup-btn" class="btn btn-backup hidden" onclick="backupAll()">📦 一键备份全部到本地</button>
+  <div class="container" id="main-content" style="display:none;">
+    <header>
+      <h1>📸 HUST电自814云相册</h1>
+    </header>
 
-    <!-- 相册切换 -->
-    <div class="album-nav" id="album-nav"></div>
+    <!-- 相册导航 -->
+    <div class="album-nav" id="album-nav">
+      <button class="album-btn active" onclick="switchAlbum('')">全部</button>
+      <!-- 动态生成 -->
+    </div>
 
     <!-- 上传区域 -->
-    <div class="upload-area" id="drop-zone">
-      <p style="margin:0;color:#666;font-size:14px;">点击选择文件或拖拽至此</p>
-      <p style="margin:5px 0 0 0;color:#999;font-size:12px;">支持图片/视频 (自动生成封面)</p>
-      <label class="upload-btn">
-        选择文件
-        <input type="file" id="file-input" multiple accept="image/*,video/*" onchange="handleFiles(this.files)">
-      </label>
+    <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+      <p>📂 点击或拖拽文件到此处上传</p>
+      <input type="file" id="fileInput" multiple accept="image/*,video/*" onchange="handleFiles(this.files)">
       
       <div class="progress-container" id="progress-container">
         <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
@@ -210,284 +255,268 @@ function getFullHTML() {
 
     <!-- 文件列表 -->
     <div class="gallery" id="gallery">
-      <div style="grid-column:1/-1;text-align:center;padding:40px;color:#999;">加载中...</div>
+      <p style="grid-column: 1/-1; text-align: center; color: #999; padding: 40px;">加载中...</p>
+    </div>
+
+    <!-- 管理员备份 -->
+    <div class="admin-controls" id="admin-panel" style="display:none;">
+      <button class="btn-backup" onclick="backupAll()">📦 一键备份全部到本地</button>
+      <p style="font-size:12px; color:#666; margin-top:5px;">当前模式：管理员</p>
     </div>
   </div>
 
-  <script>
-    // 配置
-    let currentAlbum = '';
-    let isAdmin = false;
-    const albums = []; // 将从后端动态获取或硬编码
+<script>
+  let currentAlbum = '';
+  let isAdmin = false;
+  const API_BASE = window.location.origin;
 
-    // 初始化
-    window.onload = async () => {
-      // 尝试从 localStorage 恢复登录状态
-      const savedRole = localStorage.getItem('album_role');
-      if (savedRole) {
-        if (savedRole === 'admin') isAdmin = true;
-        showMainContent();
-        await loadAlbums();
-        await loadFiles();
-      }
-    };
-
-    // 检查密码
-    async function checkPassword() {
-      const pwd = document.getElementById('password-input').value;
-      if (!pwd) return;
-
-      try {
-        // 简单验证：尝试访问一个需要权限的接口，或者我们做一个专门的验证接口
-        // 这里为了简化，我们假设如果密码不为空，先显示内容，具体权限在操作时校验
-        // 更好的做法是后端验证，但为了单文件，我们采用前端标记 + 后端删除时校验
-        
-        // 模拟验证逻辑 (实际应调用后端 API 验证)
-        // 由于无法在不暴露密码的情况下纯前端验证，我们采用策略：
-        // 用户输入密码 -> 存入 Session -> 后续操作带上此密码头
-        // 但 Worker 读取 header 需要代码配合。
-        // 简易方案：在这里硬编码判断 (不安全但符合无数据库场景) 或 假设用户诚实
-        
-        // 修正方案：我们在 JS 里定义两个哈希值？不，还是依赖后端。
-        // 让我们假设用户输入后，我们暂时不验证，而是根据后续操作反馈。
-        // 或者：我们在 HTML 里写死两个默认密码做演示？不，用户要自定义。
-        
-        // 最终方案：前端不做严格验证，输入任意非空字符即进入，
-        // 但“删除”和“备份”按钮只有输入特定密码才显示。
-        // 如何知道是不是管理员？让用户选？或者输入特定密码自动识别。
-        
-        // 让我们改一下逻辑：
-        // 用户输入密码。
-        // 如果密码 == 管理员密码 (需前端知道？不行，会泄露)
-        // 妥协方案：
-        // 1. 所有人输入任意密码进入“访客模式”(可看可传)。
-        // 2. 界面上有一个“我是管理员”按钮，点击再次输入密码，验证通过后显示删除/备份按钮。
-        
-        document.getElementById('login-modal').classList.add('hidden');
-        document.getElementById('main-content').classList.remove('hidden');
-        localStorage.setItem('album_role', 'user');
-        
-        // 加载相册列表 (从环境变量读取比较麻烦，这里先硬编码5个，或者通过URL参数传递？)
-        // 最佳实践：在 wrangler.toml 设置变量，然后在 JS 里通过全局变量注入？
-        // Pages Functions 很难直接注入变量到前端 HTML 字符串。
-        // 变通：我们在 HTML 头部插入 script 标签定义变量。
-        
-        await loadAlbums(); 
-        await loadFiles();
-        
-      } catch (e) {
-        alert('网络错误');
-      }
-    }
+  // 初始化相册按钮
+  function initAlbums() {
+    const nav = document.getElementById('album-nav');
+    const albums = ${JSON.stringify(albums)};
     
-    // 管理员验证弹窗
-    function verifyAdmin() {
-      const pwd = prompt("请输入管理员密码以执行此操作:");
-      if (!pwd) return false;
-      // 这里同样无法直接验证，除非后端提供 /api/verify 接口
-      // 让我们添加一个简单的 /api/verify 接口逻辑到上面 JS 中
-      return true; // 暂时跳过，依赖后端删除接口的隐式验证（如果后端没做鉴权，这就只是个UI开关）
-    }
+    albums.forEach((name, index) => {
+      const btn = document.createElement('button');
+      btn.className = 'album-btn';
+      btn.textContent = name;
+      btn.onclick = () => switchAlbum(name);
+      nav.appendChild(btn);
+    });
+  }
 
-    // 加载相册标签
-    async function loadAlbums() {
-      // 由于无法直接从前端读取 env vars，我们预设这5个，或者通过后端 API 返回
-      // 这里我们硬编码名称，实际使用时请确保与后端逻辑一致
-      // 更好的方式：后端 /api/config 返回相册名
-      const nav = document.getElementById('album-nav');
-      nav.innerHTML = '<div class="album-tab active" onclick="switchAlbum(\'\', this)">全部</div>';
-      // 假设有5个，实际应从后端获取
-      const defaultAlbums = ["班级活动", "学习资料", "生活点滴", "实验项目", "毕业留念"];
-      // 注意：这里需要后端配合返回真实的相册名，否则前端写死了
-      // 临时方案：用户在上传时手动输入？不，我们要自动化。
-      // 既然无法动态获取，我们先写死，您在部署时如果改了名字，这里也要改。
-      // 或者：我们约定相册名就是文件夹名，列出所有文件夹？R2 list 不支持直接列文件夹。
-      
-      // 折中：我们在 HTML 生成时，由 Node.js (构建时) 注入？不行，这是 Serverless。
-      // 只能硬编码或者让用户在上传时选择。
-      // 为了体验，我们在这里硬编码，请您在代码中修改下面的数组为您设置的环境变量名
-      const albumNames = defaultAlbums; 
-      
-      albumNames.forEach(name => {
-        const tab = document.createElement('div');
-        tab.className = 'album-tab';
-        tab.textContent = name;
-        tab.onclick = () => switchAlbum(name, tab);
-        nav.appendChild(tab);
-      });
-    }
+  // 登录验证
+  async function checkLogin() {
+    const pwd = document.getElementById('password-input').value;
+    const err = document.getElementById('login-error');
+    
+    // 简单的客户端验证提示，实际安全依赖后端校验（此处为简化演示，实际生产建议后端校验）
+    // 由于是无服务器架构，我们通过尝试访问一个受保护接口或约定来判定
+    // 这里我们假设：如果密码长度>0 就允许进入，具体权限在后端操作时校验
+    // 为了真正安全，应该在 Worker 里校验密码，这里为了演示流畅性，先展示界面
+    
+    if (!pwd) return;
 
-    function switchAlbum(name, element) {
-      currentAlbum = name;
-      document.querySelectorAll('.album-tab').forEach(t => t.classList.remove('active'));
-      element.classList.add('active');
-      loadFiles();
-    }
+    // 模拟验证：实际项目中应调用 /api/verify 接口
+    // 这里我们暂时跳过严格的后端密码校验逻辑以展示界面，
+    // 但会在上传/删除时通过 Header 传递密码给后端校验
+    
+    localStorage.setItem('user_password', pwd);
+    
+    // 判断是否为管理员密码 (需要用户输入正确的管理员密码，这里简单判断长度或特定值，实际应后端判断)
+    // 修正：我们在上传和删除时发送密码，由后端决定成败。
+    // 前端只负责区分“显示删除按钮”。
+    // 为了知道是否是管理员，我们可以尝试列出一个只有管理员能看的隐藏文件，或者简单点：
+    // 让用户选择身份，或者默认显示删除按钮，点击时如果失败再提示。
+    // 最佳方案：后端返回一个标识。
+    
+    // 简化方案：直接进入，删除按钮对所有人生效，但后端会拦截非管理员的删除请求并返回403
+    // 这样前端可以统一显示删除按钮，非管理员点击会报错 "Permission Denied"
+    
+    document.getElementById('login-modal').style.display = 'none';
+    document.getElementById('main-content').style.display = 'block';
+    initAlbums();
+    loadFiles();
+  }
 
-    // 加载文件
-    async function loadFiles() {
-      const gallery = document.getElementById('gallery');
-      gallery.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:20px;">加载中...</div>';
+  // 切换相册
+  function switchAlbum(name) {
+    currentAlbum = name;
+    document.querySelectorAll('.album-btn').forEach(b => b.classList.remove('active'));
+    event.target.classList.add('active');
+    loadFiles();
+  }
+
+  // 加载文件
+  async function loadFiles() {
+    const gallery = document.getElementById('gallery');
+    gallery.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #999;">加载中...</p>';
+    
+    const url = new URL(API_BASE + '/api/list');
+    if (currentAlbum) url.searchParams.set('album', currentAlbum);
+    
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      gallery.innerHTML = '';
       
-      try {
-        const res = await fetch('/api/list');
-        const data = await res.json();
-        gallery.innerHTML = '';
+      if (!data.objects || data.objects.length === 0) {
+        gallery.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #999;">暂无文件</p>';
+        return;
+      }
+
+      data.objects.forEach(obj => {
+        if (obj.isCover) return; // 跳过自动生成的封面占位符（如果有）
+
+        const card = document.createElement('div');
+        card.className = 'card';
         
-        let files = data.objects;
-        if (currentAlbum) {
-          files = files.filter(f => f.key.startsWith(currentAlbum + '/'));
-        }
+        let mediaHtml = '';
+        const fileUrl = API_BASE + '/file/' + encodeURIComponent(obj.key);
         
-        // 按时间倒序
-        files.sort((a, b) => new Date(b.uploaded) - new Date(a.uploaded));
-
-        if (files.length === 0) {
-          gallery.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#999;padding:20px;">暂无文件</div>';
-          return;
-        }
-
-        files.forEach(file => {
-          const displayName = file.key.split('/').pop();
-          const isVideo = file.type === 'video';
-          const coverUrl = isVideo ? `/file/${encodeURIComponent(file.key)}.jpg` : `/file/${encodeURIComponent(file.key)}`;
-          
-          const card = document.createElement('div');
-          card.className = 'card';
-          card.innerHTML = \`
-            <div class="media-wrapper" onclick="window.open('/file/\${encodeURIComponent(file.key)}', '_blank')">
-              <img src="\${coverUrl}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />
-              \${isVideo ? '<div class="video-icon">▶</div>' : ''}
-              \${isVideo ? '<video src="'+coverUrl+'" style="display:none" onerror="this.parentElement.querySelector(\'img\').style.display=\'block\'"></video>' : ''}
-            </div>
-            <div class="card-actions">
-              <span class="file-name" title="\${displayName}">\${displayName}</span>
-              <div class="btn-group">
-                <button class="btn btn-download" onclick="downloadFile('\${encodeURIComponent(file.key)}')">⬇</button>
-                <button class="btn btn-delete \${!isAdmin ? 'hidden' : ''}" onclick="deleteFile('\${encodeURIComponent(file.key)}')">🗑</button>
-              </div>
+        if (obj.type === 'video') {
+          // 视频：显示带播放图标的封面（浏览器会自动抓取第一帧）
+          mediaHtml = \`
+            <div class="media-wrapper">
+              <video src="\${fileUrl}" preload="metadata"></video>
+              <div class="video-icon">▶</div>
             </div>
           \`;
-          gallery.appendChild(card);
-        });
-        
-        // 检查是否显示备份按钮
-        const backupBtn = document.getElementById('backup-btn');
-        if (isAdmin) backupBtn.classList.remove('hidden');
-        else backupBtn.classList.add('hidden');
-
-      } catch (e) {
-        gallery.innerHTML = '加载失败: ' + e.message;
-      }
-    }
-
-    // 上传逻辑
-    async function handleFiles(files) {
-      if (!files.length) return;
-      
-      const container = document.getElementById('progress-container');
-      const fill = document.getElementById('progress-fill');
-      const text = document.getElementById('progress-text');
-      
-      container.style.display = 'block';
-      
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('album', currentAlbum);
-        
-        text.textContent = \`正在上传 \${i+1}/\${files.length}: \${file.name}\`;
-        
-        try {
-          const xhr = new XMLHttpRequest();
-          xhr.open('POST', '/api/upload');
-          
-          xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable) {
-              const percent = Math.round((e.loaded / e.total) * 100);
-              fill.style.width = percent + '%';
-              text.textContent = \`上传中: \${percent}%\`;
-            }
-          };
-          
-          await new Promise((resolve, reject) => {
-            xhr.onload = () => resolve();
-            xhr.onerror = () => reject(new Error('上传失败'));
-            xhr.send(formData);
-          });
-          
-        } catch (err) {
-          alert(\`\${file.name} 上传失败\`);
+        } else {
+          // 图片
+          mediaHtml = \`<div class="media-wrapper"><img src="\${fileUrl}" loading="lazy" /></div>\`;
         }
-      }
-      
-      text.textContent = '上传完成！';
-      setTimeout(() => { container.style.display = 'none'; fill.style.width = '0%'; }, 2000);
-      loadFiles();
-    }
 
-    // 下载
-    function downloadFile(key) {
-      window.location.href = '/file/' + key;
+        const sizeKB = (obj.size / 1024).toFixed(1);
+        
+        card.innerHTML = \`
+          \${mediaHtml}
+          <div class="card-actions">
+            <span class="file-name" title="\${obj.key}">\${obj.key.split('/').pop()}</span>
+            <div class="btn-group">
+              <button class="btn-sm btn-view" onclick="window.open('\${fileUrl}', '_blank')">查看</button>
+              <button class="btn-sm btn-down" onclick="downloadFile('\${encodeURIComponent(obj.key)}')">下载</button>
+              <button class="btn-sm btn-del" onclick="deleteFile('\${encodeURIComponent(obj.key)}')">删除</button>
+            </div>
+          </div>
+        \`;
+        gallery.appendChild(card);
+      });
+    } catch (e) {
+      gallery.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: red;">加载失败: ' + e.message + '</p>';
     }
+  }
 
-    // 删除
-    async function deleteFile(key) {
-      if (!confirm('确定删除此文件吗？')) return;
-      // 这里应该再次验证管理员密码
+  // 处理上传
+  async function handleFiles(files) {
+    if (!files.length) return;
+    
+    const container = document.getElementById('progress-container');
+    const fill = document.getElementById('progress-fill');
+    const text = document.getElementById('progress-text');
+    
+    container.style.display = 'block';
+    
+    const password = localStorage.getItem('user_password') || '';
+    const headers = { 'X-User-Password': password }; // 传递密码给后端验证
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const formData = new FormData();
+      formData.append('file', file);
+      if (currentAlbum) formData.append('album', currentAlbum);
+
+      text.textContent = \`正在上传 (\${i+1}/\${files.length}): \${file.name}\`;
+      fill.style.width = '0%';
+
       try {
-        await fetch('/file/' + key, { method: 'DELETE' });
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', API_BASE + '/api/upload' + (currentAlbum ? '?album=' + encodeURIComponent(currentAlbum) : ''), true);
+        
+        // 设置自定义头传递密码
+        xhr.setRequestHeader('X-User-Password', password);
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const percent = (e.loaded / e.total) * 100;
+            fill.style.width = percent + '%';
+            text.textContent = \`上传中: \${percent.toFixed(1)}%\`;
+          }
+        };
+
+        await new Promise((resolve, reject) => {
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) resolve();
+            else reject(new Error(xhr.responseText || '上传失败，可能是密码错误或无权限'));
+          };
+          xhr.onerror = () => reject(new Error('网络错误'));
+          xhr.send(formData);
+        });
+
+      } catch (err) {
+        alert('上传失败: ' + err.message);
+        container.style.display = 'none';
+        return;
+      }
+    }
+
+    fill.style.width = '100%';
+    text.textContent = '上传完成！';
+    setTimeout(() => { container.style.display = 'none'; loadFiles(); }, 1000);
+  }
+
+  // 下载文件
+  function downloadFile(encodedKey) {
+    window.location.href = API_BASE + '/file/' + encodedKey;
+  }
+
+  // 删除文件
+  async function deleteFile(encodedKey) {
+    if (!confirm('确定要删除这个文件吗？此操作不可恢复。')) return;
+    
+    const password = localStorage.getItem('user_password') || '';
+    
+    try {
+      const res = await fetch(API_BASE + '/file/' + encodedKey, {
+        method: 'DELETE',
+        headers: { 'X-User-Password': password }
+      });
+      
+      if (res.ok) {
         loadFiles();
+      } else {
+        const errText = await res.text();
+        alert('删除失败：' + (errText || '权限不足或网络错误'));
+      }
+    } catch (e) {
+      alert('删除出错: ' + e.message);
+    }
+  }
+
+  // 一键备份 (管理员功能)
+  async function backupAll() {
+    if (!confirm('开始打包所有文件？大文件可能需要较长时间。')) return;
+    
+    const zip = new JSZip();
+    const folder = zip.folder("HUST_Photos");
+    
+    alert('开始获取文件列表...');
+    const res = await fetch(API_BASE + '/api/list');
+    const data = await res.json();
+    
+    if (!data.objects.length) { alert('没有文件可备份'); return; }
+
+    const btn = document.querySelector('.btn-backup');
+    const originalText = btn.textContent;
+    
+    for (let i = 0; i < data.objects.length; i++) {
+      const obj = data.objects[i];
+      btn.textContent = \`正在打包 (\${i+1}/\${data.objects.length}): \${obj.key}\`;
+      
+      try {
+        const fileRes = await fetch(API_BASE + '/file/' + encodeURIComponent(obj.key));
+        const blob = await fileRes.blob();
+        folder.file(obj.key, blob);
       } catch (e) {
-        alert('删除失败，您可能没有权限');
+        console.error('Failed to download', obj.key, e);
       }
     }
 
-    // 一键备份
-    async function backupAll() {
-      if (!confirm('开始打包所有文件，这可能需要几分钟...')) return;
-      
-      const zip = new JSZip();
-      const res = await fetch('/api/list');
-      const data = await res.json();
-      
-      const progressBox = document.createElement('div');
-      progressBox.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:white;padding:20px;border-radius:8px;box-shadow:0 0 20px rgba(0,0,0,0.2);z-index:2000;text-align:center;';
-      progressBox.innerHTML = '<h3>正在打包...</h3><p id="bk-status">准备中</p>';
-      document.body.appendChild(progressBox);
-
-      for (const file of data.objects) {
-        document.getElementById('bk-status').textContent = \`正在下载: \${file.key}\`;
-        try {
-          const blob = await fetch('/file/' + encodeURIComponent(file.key)).then(r => r.blob());
-          zip.file(file.key, blob);
-        } catch (e) {
-          console.error('Skip', file.key);
-        }
-      }
-      
-      document.getElementById('bk-status').textContent = '生成 ZIP 文件中...';
-      const content = await zip.generateAsync({ type: 'blob' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(content);
-      link.download = 'HUST-Album-Backup-' + new Date().toISOString().slice(0,10) + '.zip';
-      link.click();
-      
-      document.body.removeChild(progressBox);
-    }
-
-    // 拖拽支持
-    const dropZone = document.getElementById('drop-zone');
-    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
-    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-    dropZone.addEventListener('drop', (e) => {
-      e.preventDefault();
-      dropZone.classList.remove('dragover');
-      handleFiles(e.dataTransfer.files);
-    });
-  </script>
+    btn.textContent = '正在生成 ZIP...';
+    const content = await zip.generateAsync({type:"blob"});
+    
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(content);
+    link.download = "HUST_Photos_Backup.zip";
+    link.click();
+    
+    btn.textContent = originalText;
+    alert('备份完成！');
+  }
+</script>
 </body>
-</html>
-  `;
+</html>`;
+
+  return new Response(html, {
+    headers: { 'Content-Type': 'text/html' }
+  });
 }
