@@ -42,9 +42,9 @@ export default {
         if (!password) return handleCORS(new Response(JSON.stringify({ error: '请输入密码' }), { status: 400 }));
         
         if (password === adminPwd) {
-          return handleCORS(new Response(JSON.stringify({ role: 'admin', token: 'admin-token' })));
+          return handleCORS(new Response(JSON.stringify({ role: 'admin', token: await makeToken('admin', adminPwd) })));
         } else if (password === accessPwd) {
-          return handleCORS(new Response(JSON.stringify({ role: 'user', token: 'user-token' })));
+          return handleCORS(new Response(JSON.stringify({ role: 'user', token: await makeToken('user', accessPwd) })));
         } else {
           return handleCORS(new Response(JSON.stringify({ error: '密码错误' }), { status: 401 }));
         }
@@ -88,7 +88,15 @@ export default {
         const album = formData.get('album');
         
         if (!file) return handleCORS(new Response(JSON.stringify({ error: 'No file' }), { status: 400 }));
-        
+
+        // 鉴权：上传需要有效的登录 token（普通用户或管理员）
+        const upTok = bearerToken(request);
+        const userTok = await makeToken('user', env.ACCESS_PASSWORD);
+        const adminTok = await makeToken('admin', env.ADMIN_PASSWORD);
+        if (upTok !== userTok && upTok !== adminTok) {
+          return handleCORS(new Response(JSON.stringify({ error: '需要登录' }), { status: 401 }));
+        }
+
         // 构建路径：AlbumName/filename
         const safeAlbum = album ? album.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_') : '未分类';
         const filename = file.name.replace(/[^a-zA-Z0-9.\u4e00-\u9fa5_-]/g, '_');
@@ -121,7 +129,12 @@ export default {
 
       // 7. 删除文件 (仅管理员)
       if (path.startsWith('/file/') && method === 'DELETE') {
-        // 实际项目中应在此处再次校验 Admin Token
+        // 鉴权：删除必须是管理员 token
+        const delTok = bearerToken(request);
+        const adminTok = await makeToken('admin', env.ADMIN_PASSWORD);
+        if (delTok !== adminTok) {
+          return handleCORS(new Response(JSON.stringify({ error: '需要管理员权限' }), { status: 403 }));
+        }
         const filename = decodeURIComponent(path.replace('/file/', ''));
         await env.MY_BUCKET.delete(filename);
         return handleCORS(new Response(JSON.stringify({ success: true })));
@@ -135,6 +148,17 @@ export default {
     }
   },
 };
+
+async function makeToken(role, password) {
+  const data = new TextEncoder().encode(role + '|' + (password || ''));
+  const buf = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function bearerToken(request) {
+  const h = request.headers.get('Authorization') || '';
+  return h.replace(/^Bearer\s+/i, '');
+}
 
 function handleCORS(response) {
   const headers = new Headers(response.headers);
@@ -268,6 +292,7 @@ function getHTML(env) {
   const API = '';
   let currentAlbum = '';
   let userRole = ''; // 'user' or 'admin'
+  let userToken = '';
   let albums = [];
 
   // 初始化
@@ -307,6 +332,7 @@ function getHTML(env) {
       const data = await res.json();
       if (res.ok) {
         userRole = data.role;
+        userToken = data.token || '';
         document.getElementById('login-overlay').style.display = 'none';
         if (userRole === 'admin') {
           document.getElementById('backupBtn').style.display = 'flex';
@@ -390,7 +416,7 @@ function getHTML(env) {
   async function deleteFile(key) {
     if (!confirm('确定删除？')) return;
     try {
-      await fetch(API + '/file/' + key, { method: 'DELETE' });
+      await fetch(API + '/file/' + key, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + userToken } });
       loadFiles();
     } catch (e) { alert('删除失败'); }
   }
@@ -427,6 +453,7 @@ function getHTML(env) {
       try {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', API + '/api/upload', true);
+        xhr.setRequestHeader('Authorization', 'Bearer ' + userToken);
         
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) {

@@ -33,7 +33,7 @@ export async function onRequest(context) {
     }
     if (path.startsWith('/file/') && method === 'DELETE') {
       const filename = decodeURIComponent(path.replace('/file/', ''));
-      return await handleDelete(env, filename);
+      return await handleDelete(request, env, filename);
     }
     
     return new Response('Not Found', { status: 404 });
@@ -90,6 +90,15 @@ async function handleUpload(request, env, album) {
     });
   }
 
+  // 鉴权：上传需要正确的访问密码（普通用户或管理员）
+  const upPwd = request.headers.get('X-User-Password') || '';
+  if (upPwd !== env.ACCESS_PASSWORD && upPwd !== env.ADMIN_PASSWORD) {
+    return new Response(JSON.stringify({ error: '需要登录' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
+
   let finalKey = file.name;
   if (album) {
     finalKey = album + '/' + file.name;
@@ -142,7 +151,15 @@ async function handleDownload(env, filename) {
   });
 }
 
-async function handleDelete(env, filename) {
+async function handleDelete(request, env, filename) {
+  // 鉴权：删除必须是管理员密码
+  const delPwd = request.headers.get('X-User-Password') || '';
+  if (delPwd !== env.ADMIN_PASSWORD) {
+    return new Response(JSON.stringify({ error: '需要管理员权限' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
   await env.MY_BUCKET.delete(filename);
   return new Response(JSON.stringify({ success: true }), {
     headers: { 
