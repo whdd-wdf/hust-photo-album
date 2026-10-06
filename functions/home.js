@@ -14,7 +14,7 @@ export const HOME_HTML = `
     #login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: url('login-bg.jpg') center/cover no-repeat; z-index: 9999; display: flex; justify-content: center; align-items: center; }
     #login-overlay::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.45); }
     #login-overlay .login-box { position: relative; z-index: 1; }
-    .login-box { background: rgba(255,255,255,0.95); padding: 18px 20px; border-radius: 12px; width: auto; max-width: 280px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+    .login-box { background: rgba(255,255,255,0.95); padding: 12px 14px; border-radius: 10px; width: auto; max-width: 185px; text-align: center; box-shadow: 0 8px 20px rgba(0,0,0,0.3); }
     /* 竖屏：底部居中，不挡中间人物 */
     @media (orientation: portrait) {
       #login-overlay { align-items: flex-end; padding-bottom: 8vh; }
@@ -23,9 +23,9 @@ export const HOME_HTML = `
     @media (orientation: landscape) {
       #login-overlay { align-items: flex-end; justify-content: flex-end; padding: 0 6vw 6vh 0; }
     }
-    .login-box h2 { margin-top: 0; color: var(--primary); }
-    .login-box input { width: 100%; padding: 10px; margin: 10px 0; border: 2px solid #ddd; border-radius: 8px; font-size: 14px; box-sizing: border-box; }
-    .login-box button { width: 100%; padding: 10px; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: bold; cursor: pointer; }
+    .login-box h2 { margin: 0 0 6px 0; color: var(--primary); font-size: 14px; white-space: nowrap; }
+    .login-box input { width: 100%; padding: 8px; margin: 0 0 8px 0; border: 2px solid #ddd; border-radius: 6px; font-size: 13px; box-sizing: border-box; }
+    .login-box button { width: 100%; padding: 8px; background: var(--primary); color: white; border: none; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer; }
     .login-box button:active { transform: scale(0.98); }
     .error-msg { color: var(--danger); font-size: 14px; display: none; margin-bottom: 10px; }
 
@@ -78,8 +78,8 @@ export const HOME_HTML = `
   <!-- 登录遮罩 -->
   <div id="login-overlay">
     <div class="login-box">
-      <h2>HUST电自814<br>云相册登录</h2>
-      <p style="font-size:13px; color:#666;">请输入访问密码或管理密码</p>
+      <h2>电自814云相册</h2>
+      <p style="font-size:11px; color:#666; margin:0 0 8px 0;">请输入访问密码或管理密码</p>
       <input type="password" id="passwordInput" placeholder="输入密码..." autocomplete="off">
       <div class="error-msg" id="loginError">密码错误，请重试</div>
       <button onclick="doLogin()" id="loginBtn">进入相册</button>
