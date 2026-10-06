@@ -36,6 +36,7 @@ export const HOME_HTML = `
     /* 主界面 */
     .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
     header { text-align: center; margin-bottom: 20px; }
+    .backup-btn { padding: 6px 12px; border-radius: 6px; border: none; background: #8b5cf6; color: #fff; font-size: 13px; cursor: pointer; margin-right: 8px; }
     h1 { color: #1f2937; font-size: 1.5rem; margin-bottom: 5px; }
     .user-info { font-size: 0.9rem; color: #666; display: flex; justify-content: space-between; align-items: center; }
     .logout-btn { background: none; border: 1px solid #ccc; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
@@ -96,8 +97,10 @@ export const HOME_HTML = `
       <h1>HUST电自814云相册</h1>
       <div class="user-info">
         <span id="userRoleDisplay">身份：未知</span>
+        <button class="backup-btn" id="backupBtn" onclick="startBackup()" style="display:none;">备份到云盘</button>
         <button class="logout-btn" onclick="logout()">退出登录</button>
       </div>
+      <div id="backupStatus" style="display:none; margin-top:8px; font-size:13px; color:#666;"></div>
     </header>
 
     <!-- 相册切换 -->
@@ -295,6 +298,31 @@ export const HOME_HTML = `
       } catch (e) {
         if (e.name !== 'AbortError') alert('保存失败：' + e.message);
       }
+    }
+
+    // 备份到 Google Drive（仅管理员）
+    async function startBackup() {
+      const btn = document.getElementById('backupBtn');
+      const st = document.getElementById('backupStatus');
+      if (!confirm('将相册所有文件备份到 Google 云盘？已备份过的文件会自动跳过。')) return;
+      btn.disabled = true; btn.textContent = '备份中...';
+      st.style.display = ''; st.textContent = '正在备份，请稍候...';
+      try {
+        const res = await fetch(API_BASE + '/api/backup', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + authToken },
+        });
+        const data = await res.json();
+        if (data.success) {
+          st.textContent = '备份完成：新增 ' + data.uploaded + ' 个，跳过 ' + data.skipped + ' 个，共 ' + data.total + ' 个' +
+            (data.errors && data.errors.length ? '，失败 ' + data.errors.length + ' 个' : '');
+        } else {
+          st.textContent = '备份失败：' + (data.error || '未知错误');
+        }
+      } catch (e) {
+        st.textContent = '备份失败：' + e.message;
+      }
+      btn.disabled = false; btn.textContent = '备份到云盘';
     }
 
     // 上传逻辑
