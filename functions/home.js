@@ -14,10 +14,18 @@ export const HOME_HTML = `
     #login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: url('login-bg.jpg') center/cover no-repeat; z-index: 9999; display: flex; justify-content: center; align-items: center; }
     #login-overlay::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.45); }
     #login-overlay .login-box { position: relative; z-index: 1; }
-    .login-box { background: white; padding: 30px; border-radius: 12px; width: 90%; max-width: 400px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+    .login-box { background: rgba(255,255,255,0.95); padding: 18px 20px; border-radius: 12px; width: auto; max-width: 280px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+    /* 竖屏：底部居中，不挡中间人物 */
+    @media (orientation: portrait) {
+      #login-overlay { align-items: flex-end; padding-bottom: 8vh; }
+    }
+    /* 横屏：右下角，不挡主体 */
+    @media (orientation: landscape) {
+      #login-overlay { align-items: flex-end; justify-content: flex-end; padding: 0 6vw 6vh 0; }
+    }
     .login-box h2 { margin-top: 0; color: var(--primary); }
-    .login-box input { width: 100%; padding: 12px; margin: 15px 0; border: 2px solid #ddd; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
-    .login-box button { width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; }
+    .login-box input { width: 100%; padding: 10px; margin: 10px 0; border: 2px solid #ddd; border-radius: 8px; font-size: 14px; box-sizing: border-box; }
+    .login-box button { width: 100%; padding: 10px; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: bold; cursor: pointer; }
     .login-box button:active { transform: scale(0.98); }
     .error-msg { color: var(--danger); font-size: 14px; display: none; margin-bottom: 10px; }
 
