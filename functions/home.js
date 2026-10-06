@@ -224,11 +224,10 @@ export const HOME_HTML = `
           } else if (obj.type === 'video') {
             // 视频封面：canvas 抓第一帧做缩略图，hover 播放预览
             mediaHtml = \`
-              <img class="video-thumb" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;background:#000;" alt="">
-              <div class="video-play-icon" style="position:absolute;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;pointer-events:none;">
-                <span style="font-size:40px;text-shadow:0 2px 8px rgba(0,0,0,0.6);">▶️</span>
+              <video crossorigin="anonymous" src="\${fileUrl}" preload="metadata" muted playsinline style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;" onclick="if(this.paused){this.play()}else{this.pause()}"></video>
+              <div class="video-play-icon" style="position:absolute;bottom:8px;right:8px;pointer-events:none;">
+                <span style="font-size:24px;text-shadow:0 2px 8px rgba(0,0,0,0.6);">▶️</span>
               </div>
-              <video crossorigin="anonymous" src="\${fileUrl}" preload="metadata" muted playsinline style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;opacity:0;" onmouseenter="this.style.opacity=1;this.play()" onmouseleave="this.style.opacity=0;this.pause()"></video>
             \`;
           } else {
             mediaHtml = \`<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#f3f4f6;font-size:36px;">📄</div>\`;
@@ -249,16 +248,12 @@ export const HOME_HTML = `
               <div class="action-btns">
                 <a href="\${fileUrl}" target="_blank" class="btn-sm btn-view">查看</a>
                 <a href="\${fileUrl}" download class="btn-sm btn-dl">下载</a>
-                <button class="btn-sm btn-save" onclick="saveToAlbum('\${fileUrl}', '\${fileName}')">存相册</button>
+                <button class="btn-sm btn-save" onclick="saveToAlbum('\${fileUrl}', '\${fileName}')">分享</button>
                 \${deleteBtn}
               </div>
             </div>
           \`;
           gallery.appendChild(card);
-          // 视频生成封面缩略图
-          var vEl = card.querySelector('video');
-          var tEl = card.querySelector('.video-thumb');
-          if (vEl && tEl) genVideoThumb(vEl, tEl);
         });
       } catch (e) {
         gallery.innerHTML = '<div style="color:red;text-align:center;">加载失败:' + e.message + '</div>';
@@ -285,33 +280,6 @@ export const HOME_HTML = `
       } catch (e) {
         if (e.name !== 'AbortError') alert('保存失败：' + e.message);
       }
-    }
-
-    // 视频封面：抓取第一帧做缩略图
-    function genVideoThumb(video, img) {
-      var done = false;
-      function capture() {
-        if (done) return; done = true;
-        try {
-          var c = document.createElement('canvas');
-          c.width = video.videoWidth || 320;
-          c.height = video.videoHeight || 240;
-          c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
-          img.src = c.toDataURL('image/jpeg', 0.7);
-          var icon = img.parentElement.querySelector('.video-play-icon');
-          if (icon) icon.style.display = 'flex';
-        } catch (e) { /* 跨域或解码失败则保持黑底 */ }
-      }
-      video.addEventListener('loadeddata', function() {
-        // 跳到 1 秒处抓帧（避开可能的黑场开头）
-        try {
-          if (video.duration > 1.5) { video.currentTime = 1; }
-          else capture();
-        } catch (e) { capture(); }
-      });
-      video.addEventListener('seeked', capture);
-      // 超时兜底：8 秒还没抓到就用当前帧
-      setTimeout(capture, 8000);
     }
 
     // 上传逻辑
