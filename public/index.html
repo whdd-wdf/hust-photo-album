@@ -270,9 +270,14 @@
         const blob = await resp.blob();
         const file = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: fileName });
+          try {
+            await navigator.share({ files: [file], title: fileName });
+          } catch (shareErr) {
+            if (shareErr.name === 'AbortError') return; // 用户取消
+            // 分享被拒（视频太大等），降级新标签页打开长按保存
+            window.open(fileUrl, '_blank');
+          }
         } else {
-          // 不支持分享接口则新开标签页，用户长按保存
           window.open(fileUrl, '_blank');
         }
       } catch (e) {
