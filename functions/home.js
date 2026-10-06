@@ -14,7 +14,11 @@ export const HOME_HTML = `
     #login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: url('login-bg.jpg') center/cover no-repeat; z-index: 9999; display: flex; justify-content: center; align-items: center; }
     #login-overlay::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.45); }
     #login-overlay .login-box { position: relative; z-index: 1; }
-    .login-box { background: rgba(255,255,255,0.95); padding: 12px 14px; border-radius: 10px; width: auto; max-width: 185px; text-align: center; box-shadow: 0 8px 20px rgba(0,0,0,0.3); }
+    .login-box { background: rgba(255,255,255,0.18); padding: 20px 22px; border-radius: 14px; width: auto; max-width: 260px; text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,0.35); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.35); }
+    .login-box h2 { color: #fff !important; text-shadow: 0 1px 4px rgba(0,0,0,0.5); }
+    .login-box p { color: rgba(255,255,255,0.9) !important; text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
+    .login-box input { background: rgba(255,255,255,0.9); }
+    .login-box .error-msg { color: #ffb4b4 !important; }
     /* 竖屏：底部居中，不挡中间人物 */
     @media (orientation: portrait) {
       #login-overlay { align-items: flex-end; padding-bottom: 8vh; }
