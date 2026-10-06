@@ -173,6 +173,7 @@ export const HOME_HTML = `
           
           document.getElementById('userRoleDisplay').textContent = 
             currentUserRole === 'admin' ? '身份：管理员 (可删除)' : '身份：访客 (可上传/下载)';
+          if (currentUserRole === 'admin') document.getElementById('backupBtn').style.display = '';
           
           loadFiles();
           showToast('登录成功');
