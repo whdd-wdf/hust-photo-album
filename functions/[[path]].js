@@ -1,15 +1,21 @@
 // functions/[[path]].js — HUST电自814云相册 后端（Cloudflare Pages Functions）
 //
-// 路由（与线上 my-photo-drive 契约一致，另加鉴权加固）：
+// 路由（与线上 myrem.ccwu.cc Worker 契约一致，另加鉴权加固）：
 //   POST   /api/auth        {password}        → {success, role, token}
 //   GET    /api/list                             → {objects:[{key,size,type,hasCover}]}
 //   POST   /api/upload      form: file+album    → {success, filename, url}   需登录(token)
 //   GET    /file/{key}                             预览/下载（公开，<img>/<video> 要能直接加载）
 //   DELETE /file/{key}                             删除（仅 admin token）
+//   GET    / 及其他未匹配路径    先回落静态文件（ASSETS），无则函数直接伺服首页（home.js）
+//
+// 首页 HTML 来源：public/index.html 生成 functions/home.js（node gen_home.mjs 重新生成）。
+// 这样即使 Pages 静态输出目录未配对，首页也能出。
 //
 // R2 绑定名固定 MY_BUCKET，必须与 Cloudflare Pages 后台 Settings→Functions 里的绑定一致。
 // 环境变量：ACCESS_PASSWORD（访客密码）、ADMIN_PASSWORD（管理员密码）。
 // 注意：若线上 my-photo-drive 用的变量名不同（如 PASSWORD），请在后台改名或同步修改本文件。
+
+import { HOME_HTML } from './home.js';
 
 // ---------- 工具 ----------
 
@@ -140,8 +146,23 @@ export async function onRequest(context) {
       return json({ success: true });
     }
 
-    // 6. 未匹配的 GET 请求 → 返回 undefined，让 Pages 伺服静态文件（/、/assets 等）
-    if (method === 'GET') return;
+    // 6. 未匹配的 GET 请求：先回落静态文件（env.ASSETS），
+    //    没有静态资产时 / 由函数直接返回首页（与旧 Worker 行为一致）
+    if (method === 'GET') {
+      try {
+        const asset = await env.ASSETS.fetch(request);
+        if (asset && asset.status !== 404) return asset;
+      } catch (_) { /* ASSETS 不可用则继续 */ }
+      if (path === '/') {
+        return new Response(HOME_HTML, {
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Access-Control-Allow-Origin': '*',
+          },
+        });
+      }
+      return new Response('Not Found', { status: 404 });
+    }
     return new Response('Not Found', { status: 404 });
   } catch (e) {
     console.error(e);

@@ -9,9 +9,13 @@
 
 ```
 public/index.html        # 前端页面（登录/相册切换/上传/预览/下载/删除）
-functions/[[path]].js    # 后端全部路由（auth/list/upload/file 预览/删除）
-wrangler.jsonc           # Pages 项目配置（R2 绑定 MY_BUCKET）
+functions/[[path]].js    # 后端全部路由（auth/list/upload/file 预览/删除/首页伺服）
+functions/home.js        # 首页 HTML（由 public/index.html 生成，勿手改）
+scripts/gen_home.mjs     # 改完 public/index.html 后运行: node scripts/gen_home.mjs
+wrangler.json            # Pages 配置（R2 绑定 MY_BUCKET）
 ```
+
+> **首页双通道**：函数优先走 Pages 静态文件（`env.ASSETS`）；静态没发布时由 `home.js` 直接返回首页（与旧 Worker 行为一致）。**改页面 = 改 `public/index.html` → 跑 `node scripts/gen_home.mjs` → push**，两步都要。
 
 ## API
 
