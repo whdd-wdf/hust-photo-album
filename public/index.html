@@ -263,15 +263,15 @@
       try {
         const resp = await fetch(fileUrl);
         const blob = await resp.blob();
-        const file = new File([blob], fileName, { type: blob.type || image/jpeg });
+        const file = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
           await navigator.share({ files: [file], title: fileName });
         } else {
           // 不支持分享接口则新开标签页，用户长按保存
-          window.open(fileUrl, _blank);
+          window.open(fileUrl, '_blank');
         }
       } catch (e) {
-        if (e.name !== AbortError) alert(保存失败： + e.message);
+        if (e.name !== 'AbortError') alert('保存失败：' + e.message);
       }
     }
 
