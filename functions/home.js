@@ -52,7 +52,7 @@ export const HOME_HTML = `
     .card-actions { padding: 10px; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #666; }
     .file-name { max-width: 70%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .action-btns { display: flex; gap: 5px; }
-    .btn-sm { padding: 4px 8px; border-radius: 4px; border: none; font-size: 11px; cursor: pointer; background: #f3f4f6; color: #374151; }
+    .btn-sm { padding: 4px 8px; border-radius: 4px; border: none; font-size: 11px; cursor: pointer; background: #f3f4f6; color: #374151; text-decoration: none; display: inline-block; }
     .btn-view { background: #e0e7ff; color: var(--primary); }
     .btn-save { background: #d1fae5; color: #065f46; }
     .btn-del { background: #fee2e2; color: var(--danger); }
