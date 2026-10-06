@@ -1,6 +1,4 @@
-// 本文件由 public/index.html 生成（functions/ 伺服首页用）。
-// 改页面请编辑 public/index.html，然后重新生成本文件：
-//   node /root/.hermes/cache/scratch/photo-drive/gen_home.mjs
+// 由 public/index.html 生成，勿手改。运行: node scripts/gen_home.mjs
 export const HOME_HTML = `
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -56,6 +54,7 @@ export const HOME_HTML = `
     .action-btns { display: flex; gap: 5px; }
     .btn-sm { padding: 4px 8px; border-radius: 4px; border: none; font-size: 11px; cursor: pointer; background: #f3f4f6; color: #374151; }
     .btn-view { background: #e0e7ff; color: var(--primary); }
+    .btn-save { background: #d1fae5; color: #065f46; }
     .btn-del { background: #fee2e2; color: var(--danger); }
 
     /* 提示框 */
@@ -249,6 +248,7 @@ export const HOME_HTML = `
               <div class="action-btns">
                 <a href="\${fileUrl}" target="_blank" class="btn-sm btn-view">查看</a>
                 <a href="\${fileUrl}" download class="btn-sm btn-dl">下载</a>
+                <button class="btn-sm btn-save" onclick="saveToAlbum(, )">存相册</button>
                 \${deleteBtn}
               </div>
             </div>
@@ -257,6 +257,23 @@ export const HOME_HTML = `
         });
       } catch (e) {
         gallery.innerHTML = '<div style="color:red;text-align:center;">加载失败:' + e.message + '</div>';
+      }
+    }
+
+    // 存到手机相册：用系统分享接口调起"保存图片"
+    async function saveToAlbum(fileUrl, fileName) {
+      try {
+        const resp = await fetch(fileUrl);
+        const blob = await resp.blob();
+        const file = new File([blob], fileName, { type: blob.type || image/jpeg });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: fileName });
+        } else {
+          // 不支持分享接口则新开标签页，用户长按保存
+          window.open(fileUrl, _blank);
+        }
+      } catch (e) {
+        if (e.name !== AbortError) alert(保存失败： + e.message);
       }
     }
 
