@@ -39,8 +39,23 @@ token = `SHA-256(role|密码)` 派生，登录时下发；**改密码后旧 toke
 
 `npx wrangler pages dev` 起本地环境（R2 需要本地 mock，或临时绑定真实桶）。
 
-## 部署
+## 部署（当前方案：新建 Pages 项目，废弃旧 Worker）
 
-1. Cloudflare Pages 项目 `my-photo-drive` → Settings → 连接本仓库 `whdd-wdf/hust-photo-album`
-2. Build command 留空，Output directory 填 `public`
-3. 之后 `git push` 即自动部署；也可在 Deployments 页手动 Redeploy
+现状：`myrem.ccwu.cc` 挂在旧 **Worker `my-photo-drive`** 上（代码手动维护、无鉴权）；
+本仓库已连着一个 Pages 项目 `hust-photo-album`（新代码会自动部署，但静态输出目录未配对，页面 404）。
+
+标准操作流程（一次性，完成后即进入"push 即部署"状态）：
+
+1. **新建 Pages 项目**：Cloudflare → Workers & Pages → Create → **Pages** → **Connect to Git** → 选 `whdd-wdf/hust-photo-album`
+   - 项目名：`myrem`（`my-photo-drive` 名字被旧 Worker 占用，废弃 Worker 后可再改名）
+   - Build command：**留空**
+   - Output directory：**`public`**
+2. **配置后端资源**（新项目的 Settings → Functions）：
+   - **R2 绑定**：变量名 `MY_BUCKET` → 桶 `my-media-bucket`（在旧 Worker 的 Settings → R2 里确认桶名）
+   - **环境变量**：`ACCESS_PASSWORD` / `ADMIN_PASSWORD`（值从旧 Worker 的 Settings → Variables 抄过来；旧变量名不同也没关系，值照抄、名用新的）
+3. **验证**：部署完成后访问 `https://<项目名>.pages.dev`，登录、上传、删除都正常后再切域名
+4. **切域名**：新项目 → **Custom domains** → 添加 `myrem.ccwu.cc`（CF 会自动从旧 Worker 迁移）
+5. **废弃 Worker**：确认 myrem 正常后删除 Worker `my-photo-drive`
+6. （可选）Pages 项目改名 `my-photo-drive`；旧 Pages 项目 `hust-photo-album` 可一并删除
+
+之后改相册 = 改本仓库文件 → `git push` → 自动部署。
