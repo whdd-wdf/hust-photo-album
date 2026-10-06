@@ -11,7 +11,9 @@ export const HOME_HTML = `
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 0; background: var(--bg); color: #333; }
     
     /* 登录层 */
-    #login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 9999; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(5px); }
+    #login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: url('login-bg.jpg') center/cover no-repeat; z-index: 9999; display: flex; justify-content: center; align-items: center; }
+    #login-overlay::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.45); }
+    #login-overlay .login-box { position: relative; z-index: 1; }
     .login-box { background: white; padding: 30px; border-radius: 12px; width: 90%; max-width: 400px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
     .login-box h2 { margin-top: 0; color: var(--primary); }
     .login-box input { width: 100%; padding: 12px; margin: 15px 0; border: 2px solid #ddd; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
