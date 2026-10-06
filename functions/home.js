@@ -228,7 +228,7 @@ export const HOME_HTML = `
               <div class="video-play-icon" style="position:absolute;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;pointer-events:none;">
                 <span style="font-size:40px;text-shadow:0 2px 8px rgba(0,0,0,0.6);">▶️</span>
               </div>
-              <video src="\${fileUrl}" preload="metadata" muted playsinline style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;opacity:0;" onmouseenter="this.style.opacity=1;this.play()" onmouseleave="this.style.opacity=0;this.pause()"></video>
+              <video crossorigin="anonymous" src="\${fileUrl}" preload="metadata" muted playsinline style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;opacity:0;" onmouseenter="this.style.opacity=1;this.play()" onmouseleave="this.style.opacity=0;this.pause()"></video>
             \`;
           } else {
             mediaHtml = \`<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#f3f4f6;font-size:36px;">📄</div>\`;
