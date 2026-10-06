@@ -51,8 +51,9 @@
     .file-name { max-width: 70%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .action-btns { display: flex; gap: 5px; }
     .btn-sm { padding: 4px 8px; border-radius: 4px; border: none; font-size: 11px; cursor: pointer; background: #f3f4f6; color: #374151; text-decoration: none; display: inline-block; }
-    .btn-view { background: #e0e7ff; color: var(--primary); }
-    .btn-save { background: #d1fae5; color: #065f46; }
+    .btn-view { background: #3b82f6; color: #fff; }
+    .btn-dl { background: #6b7280; color: #fff; }
+    .btn-save { background: #10b981; color: #fff; }
     .btn-del { background: #fee2e2; color: var(--danger); }
 
     /* 提示框 */
@@ -222,7 +223,7 @@
           } else if (obj.type === 'video') {
             // 视频封面：canvas 抓第一帧做缩略图，hover 播放预览
             mediaHtml = `
-              <video crossorigin="anonymous" src="${fileUrl}" preload="metadata" muted playsinline style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;" onclick="if(this.paused){this.play()}else{this.pause()}"></video>
+              <video crossorigin="anonymous" src="${fileUrl}#t=1" preload="metadata" muted playsinline style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;" onclick="if(this.paused){this.play()}else{this.pause()}"></video>
               <div class="video-play-icon" style="position:absolute;bottom:8px;right:8px;pointer-events:none;">
                 <span style="font-size:24px;text-shadow:0 2px 8px rgba(0,0,0,0.6);">▶️</span>
               </div>
