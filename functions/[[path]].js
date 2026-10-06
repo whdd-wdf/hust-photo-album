@@ -140,6 +140,8 @@ export async function onRequest(context) {
       return json({ success: true });
     }
 
+    // 6. 未匹配的 GET 请求 → 返回 undefined，让 Pages 伺服静态文件（/、/assets 等）
+    if (method === 'GET') return;
     return new Response('Not Found', { status: 404 });
   } catch (e) {
     console.error(e);
