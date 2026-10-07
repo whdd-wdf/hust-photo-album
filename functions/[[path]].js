@@ -46,6 +46,44 @@ function isMedia(key) {
   return 'file';
 }
 
+// ---------- 防撞库限流（R2 存计数） ----------
+const RL_MAX_ATTEMPTS = 5;          // 窗口内最大尝试
+const RL_WINDOW_SEC = 15 * 60;      // 15 分钟窗口
+const RL_LOCK_SEC = 60 * 60;        // 触发后锁定 1 小时
+
+function clientIp(request) {
+  return request.headers.get('CF-Connecting-IP')
+      || request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim()
+      || 'unknown';
+}
+async function sha256hex(s) {
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2, '0')).join('');
+}
+async function rlCheck(env, ip) {
+  const key = '__ratelimit/' + await sha256hex('rl|' + ip);
+  let rec = { n: 0, first: 0, lockUntil: 0 };
+  try {
+    const obj = await env.MY_BUCKET.get(key);
+    if (obj) rec = await obj.json();
+  } catch (_) {}
+  const now = Date.now() / 1000;
+  if (rec.lockUntil > now) return { allowed: false, retryAfter: Math.ceil(rec.lockUntil - now) };
+  if (rec.first && now - rec.first > RL_WINDOW_SEC) { rec = { n: 0, first: 0, lockUntil: 0 }; }
+  return { allowed: true, rec, key };
+}
+async function rlFail(env, st) {
+  const now = Date.now() / 1000;
+  const rec = st.rec;
+  if (!rec.first) rec.first = now;
+  rec.n++;
+  if (rec.n >= RL_MAX_ATTEMPTS) rec.lockUntil = now + RL_LOCK_SEC;
+  try { await env.MY_BUCKET.put(st.key, JSON.stringify(rec)); } catch (_) {}
+}
+async function rlPass(env, st) {
+  try { await env.MY_BUCKET.delete(st.key); } catch (_) {}
+}
+
 // ---------- Google Drive 备份 ----------
 // 环境变量：GOOGLE_SA_EMAIL（服务账号邮箱）、GOOGLE_SA_KEY（私钥 PEM）、GOOGLE_DRIVE_FOLDER_ID（备份目标文件夹 ID）
 
@@ -132,16 +170,29 @@ export async function onRequest(context) {
     const accessPwd = env.ACCESS_PASSWORD || '';
     const adminPwd = env.ADMIN_PASSWORD || '';
 
-    // 1. 登录：校验密码，返回派生 token
+    // 1. 登录：校验密码，返回派生 token（含防撞库限流）
     if (path === '/api/auth' && method === 'POST') {
+      const ip = clientIp(request);
+      const rl = await rlCheck(env, ip);
+      if (!rl.allowed) {
+        return new Response(JSON.stringify({ success: false, error: '尝试次数过多，请稍后再试' }), {
+          status: 429,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Retry-After': String(rl.retryAfter) },
+        });
+      }
       const { password } = await request.json();
       if (!password) return json({ success: false, error: '请输入密码' }, 400);
       if (adminPwd && password === adminPwd) {
+        await rlPass(env, rl);
         return json({ success: true, role: 'admin', token: await makeToken('admin', adminPwd) });
       }
       if (accessPwd && password === accessPwd) {
+        await rlPass(env, rl);
         return json({ success: true, role: 'user', token: await makeToken('user', accessPwd) });
       }
+      await rlFail(env, rl);
+      // 失败加小延迟，拖慢自动化尝试
+      await new Promise(r => setTimeout(r, 800));
       return json({ success: false, error: '密码错误' }, 401);
     }
 
